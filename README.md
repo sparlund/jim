@@ -9,14 +9,17 @@ Features:
 cmake .
 cmake --build . --target jim
 ```
-
+# Run 
+```
+./jim <filename>
+```
 
 # TODO:
-- [ ] Read text file and display content
+- [X] Read text file and display content
     - [ ] Only read the currently displayed chuck of text to make reading large files quicker
-- [ ] Line number
-- [ ] Scrolling
+- [X] Line number
+- [ ] Scrolling with arrows
+    - [ ] Scroll wheel support
+- [ ] Handle SIGINT gracefully
 - [ ] Syntax highlight
 - [ ] Search function
-
-<!-- - [ ] -->

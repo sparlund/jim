@@ -29,6 +29,14 @@ size_t number_of_line_in_files(std::ifstream& file)
     // return ;
 }
 
+void quit()
+{
+    // Switch back to normal buffer
+    std::cout << "\033[?1049l";
+    exit(0);
+}
+
+
 class Editor
 {
 public:
@@ -36,13 +44,16 @@ public:
     std::vector<std::string> lines;
     struct termios t;
     struct termios t_saved;
+    int from,to;
     // special keys enums
     Editor()
     {
         auto w = get_window_size();
         screenrows    = w.first;
         screencolumns = w.second;
-
+        // std::cout << "screenrows = " << screenrows << std::endl;
+        // std::cout << "screencolumns = " << screencolumns << std::endl;
+        // exit(0);
         // Set terminal to single character mode.
         tcgetattr(fileno(stdin), &t);
         t_saved = t;
@@ -56,7 +67,7 @@ public:
     std::string bottom_message = "\x1b[6nHEJ";
     ~Editor()
     {
-        // Restore terminal mode.
+        // Restore terminal mode from single char mode
         if (tcsetattr(fileno(stdin), TCSANOW, &t_saved) < 0)
         {
             perror("Unable to restore terminal mode");
@@ -69,9 +80,13 @@ public:
     void refresh()
     {
         // update cursor position?
-        size_t from = current_row - row_offset;
-        size_t to   = current_row + (screenrows - row_offset);
-        for (size_t i = std::max(from,(size_t)0); i < to ; i++)
+        // row offset is number of lines from top
+        from = std::max((int)(current_row - row_offset),(int)0);
+        to   = current_row + (screenrows - row_offset) -2;
+        // std::cout << "row_offset=" << row_offset << std::endl;
+        // std::cout << "from=" << from << std::endl;
+        // std::cout << "to=" << to << std::endl;
+        for (size_t i = from; i < to ; i++)
         {
             if (i == current_row)
             {
@@ -80,13 +95,20 @@ public:
             std::cout << std::setw(getNumberOfDigitsInNumberOfLines(lines.size())) << std::setfill(' ') << i <<  "\u2502"
             << lines[i]
             << std::setw(screencolumns-lines[i].size()-getNumberOfDigitsInNumberOfLines(lines.size())-1) << std::setfill(' ')
-            << "\033[;39m" << '\n';
+            << "\033[;39m" << std::endl;
+            // << ", from=" << from << ", to=" << to << ", screenrows=" << screenrows
+            // << "X, current_row=" << current_row << ", row_offset=" << row_offset
         }
-
+        std::string bottom_string = "jim";
+        std::cout << "\033[;42m"
+        << "jim"
+        << std::setw(screencolumns-bottom_string.size()) << std::setfill(' ')
+        << "\033[;39m" << std::endl; 
     }
     void process_keys()
     {
-        std::streambuf *pbuf = std::cin.rdbuf();
+        std::streambuf* pbuf = std::cin.rdbuf();
+        
         bool done = false;
         while (!done)
         {
@@ -95,54 +117,73 @@ public:
             {
                 done = true;
             }
+            auto numer_of_chars_in_buf = pbuf->in_avail();
             c = pbuf->sbumpc();
+            // escape sequences
             if (c == 0x1b)
             {
-                done = true;
+                // Special characters like up-arrow return escape sequences
+                if (numer_of_chars_in_buf > 1)
+                {
+                    // std::cout << "Number of chars available: " << numer_of_chars_in_buf << std::endl;
+                    char t[numer_of_chars_in_buf-1];
+                    pbuf->sgetn(t, numer_of_chars_in_buf);
+                    for (size_t i = 0; i < numer_of_chars_in_buf-1; i++)
+                    {
+                        t[i] = pbuf->sbumpc();
+                        // std::cout << "t[" << i << "]=" << std::setw(2) << std::setfill('0') << std::hex << int(t[i]) << std::endl;
+                    }
+                    // some escape sequences have two extra characters after 0x1b, some have more
+                    if (numer_of_chars_in_buf == 3)
+                    {
+                        if(t[0] == 0x5b && t[1] == 0x42)
+                        {
+                            if ( !((row_offset+2) >= screenrows))
+                            {
+                                row_offset++;
+                            }
+                            current_row++;
+                            // std::cout << "row++" << std::endl;
+                            done = true;
+                        }
+                        if(t[0] == 0x5b && t[1] == 0x41)
+                        {
+                            if (row_offset > 0)
+                            {
+                                row_offset--;
+                            }
+                            if (current_row > 0)
+                            {
+                                current_row--;
+                            }
+                            
+                            done = true;
+                        }
+                    }
+                    
+                    
+                }
+                // escape button, close?
+                else
+                {
+                    quit();
+                }
             }
-            else if (c == 0x42)
-            {
-                (row_offset > screenrows)? row_offset=screenrows : row_offset++;
-                current_row++;
-                done = true;
-            }
-            // tab
-            else if (c == 'a')
-            {
-                
-            }
+            // normal char, insert at position
             else
             {
-                // std::cout << "You entered character 0x" << std::setw(2) << std::setfill('0') << std::hex << int(c) << "'" << std::endl;
+                done=true;
             }
-            // if (c == "a")
-            // {
-            // }
         }
-        // {
-            // up
-            // left
-            // else if("[D")
-            // {
-
-            // }
-            // // right
-            // else if("[C")
-            // {
-
-            // }
-            // // down
-            // else if("[B")
-            // {
-            //     current_row++;
-            // }
-        // }
+        // pbuf->pubsync();
+        // auto numer_of_chars_in_buf = pbuf->in_avail();
     }
 };
 
-
 int main(int argc, char* argv[])
 {
+    // something with catching input..
+    std::cin.sync_with_stdio(false);
     auto filename = std::string{argv[1]};
     std::ifstream file(filename);
     if (file.fail())
@@ -165,11 +206,13 @@ int main(int argc, char* argv[])
             break;
         }
     }
+    // Switch to alternate buffer! Switches back in quit()
+    std::cout << "\033[?1049h\033[H";
     // Print lines
     // 2J means clear the entire screen
-    write(STDOUT_FILENO, "\x1b[2J", 4);
+    // write(STDOUT_FILENO, "\x1b[2J", 4);
     // H positions the cursor, takes 2 arguments, 0 used below
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    // write(STDOUT_FILENO, "\x1b[H", 3);
     // below would move cursor to row 12, column 40
     // [12;40H
     while (true)
@@ -178,8 +221,4 @@ int main(int argc, char* argv[])
         // Wait for keypress before we re-draw
         e.process_keys();
     }
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
-
-
 }
